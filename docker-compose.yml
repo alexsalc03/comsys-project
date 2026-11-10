@@ -12,5 +12,28 @@ services:
       - ./data/cache:/cache
       - ./data/media:/media:ro
 
+    logging: 
+      driver: json-file
+      options: 
+        max-size: "10m"
+        max-file: "5"  
+
     restart: unless-stopped
+
+  dozzle: 
+    image: amir20/dozzle:latest
+    container_name: dozzle
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/dozzle:/data
+
+    environment:
+      DOZZLE_FILTER: name=jellyfin
+
+    restart: unless-stopped
+      
    
