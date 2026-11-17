@@ -6,7 +6,7 @@ This project aims to deploy and operate a self-hosted media streaming service us
 
 The service runs in Docker on an Ubuntu VM and is accessible at:
 
-https://media.csg.uzh.ch
+https://media.comsyslab.csg.uzh.ch
 
 Our deployment focuses on security, data persistence, backup, and disaster recovery.
 
@@ -15,8 +15,8 @@ Our deployment focuses on security, data persistence, backup, and disaster recov
 The system consists of:
 
 - **Jellyfin:** Media server running in a Docker container.
-- **Dozzle:** Web interface for monitoring Docker container logs.
-- **Middleware (Team 4):** Provides DNS, HTTPS, and reverse proxy functionality.
+- **Monitoring stack:** Arcane (container management and logs), Uptime Kuma internal service checks), and Beszel (server and container metrics), with alerts sent to our phones via ntfy.
+- **Middleware (Team 4):** Provides DNS, HTTPS, and reverse proxy functionality, the remote Borg backup repository, and external availability checks with Uptime Kuma
 - **Docker Compose:** Manages container deployment and configuration.
 
 Jellyfin listens on `192.168.100.7:8096` and is accessible through the middleware reverse proxy.
@@ -25,19 +25,22 @@ Direct access to Jellyfin is restricted to the middleware VM.
 
 ## 3. Project Structure
 
-```text
 ~/project/
-├── docker-compose.yml
-├── .env
+├── docker-compose.yml          
+├── .env                        
 ├── .gitignore
-└── data/
-    ├── config/
-    ├── cache/
-    ├── media/
-    └── dozzle/
-```
-
-The `data` directory contains persistent application data.
+├── README.md
+├── monitoring/
+│   ├── docker-compose.yaml     
+│   └── .env                     
+└── data/                       
+    ├── config/                 
+    ├── cache/                  
+    ├── media/                  
+    ├── arcane/                 
+    ├── uptime-kuma/            
+    ├── beszel/                 
+    └── beszel-socket/          
 
 Secrets are stored in `.env`, which is excluded from Git.
 
