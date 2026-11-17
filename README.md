@@ -1,6 +1,4 @@
-# Jellyfin Media Server — Team 3
-
-Communication Systems Lab — University of Zurich
+# Jellyfin Media Server
 
 ## 1. Project Overview
 
@@ -233,20 +231,3 @@ crontab -l
 - A complete VM failure could result in the loss of both the service and its backups.
 - The rsync backup is not versioned.
 - Changes made after the last successful backup may be lost.
-- The recovery procedure has not yet been tested.
-
-**Recovery targets:**
-- Backup frequency: Daily
-- RPO: 24 hours
-- RTO: 30 minutes (target, not verified)
-
-## 9. Project Status
-
-- [x] Jellyfin deployed using Docker.
-- [x] HTTPS access through middleware.
-- [x] Persistent storage configured.
-- [x] Local filesystem backup implemented.
-- [x] Automatic daily backups configured.
-- [x] Project folder recovery procedure documented.
-- [ ] Project folder recovery tested.
-- [ ] External backup for complete VM disaster 
