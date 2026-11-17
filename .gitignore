@@ -1,4 +1,13 @@
+# Secrets
 .env
 .env.*
-.log
-/data
+!.env.example
+
+# Persistent data
+/data/
+
+# Logs
+*.log
+
+# Backups
+jellyfin-backup/
