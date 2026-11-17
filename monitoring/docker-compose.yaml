@@ -1,0 +1,41 @@
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:2-slim
+    container_name: uptime-kuma
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ../data/uptime-kuma:/app/data
+    networks: [default, project_default]
+    logging: &logs
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    restart: unless-stopped
+
+  beszel:
+    image: henrygd/beszel:latest
+    container_name: beszel
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - ../data/beszel:/beszel_data
+      - ../data/beszel-socket:/beszel_socket
+    logging: *logs
+    restart: unless-stopped
+
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ../data/beszel-socket:/beszel_socket
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      KEY: ${BESZEL_KEY}
+    logging: *logs
+    restart: unless-stopped
+
+networks:
+  project_default:
+    external: true

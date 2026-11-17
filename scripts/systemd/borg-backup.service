@@ -1,0 +1,18 @@
+[Unit]
+Description=Borg backup to Team 4 VM
+
+[Service]
+Type=oneshot
+
+Environment="BORG_REPO=ssh://borg@192.168.100.8/var/backups/borg/comsys-lab-group-3"
+Environment="BORG_PASSCOMMAND=cat %h/.config/borg/passphrase"
+Environment="BORG_RSH=ssh -i %h/.ssh/comsys_deploy -o IdentitiesOnly=yes -o BatchMode=yes"
+
+WorkingDirectory=/home/comsys/jellyfin-backup
+
+Nice=10
+IOSchedulingClass=idle
+
+ExecStart=/usr/bin/borg create --stats --compression zstd ::{hostname}-{now} .
+ExecStartPost=/usr/bin/borg prune --keep-daily 7 --keep-weekly 4 --keep-monthly 3
+ExecStartPost=/usr/bin/borg compact
