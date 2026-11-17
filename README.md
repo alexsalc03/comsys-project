@@ -231,3 +231,346 @@ crontab -l
 - A complete VM failure could result in the loss of both the service and its backups.
 - The rsync backup is not versioned.
 - Changes made after the last successful backup may be lost.
+
+
+
+## VM Disaster Recovery
+
+### Overview
+
+To protect our Jellyfin service against complete VM failure, we implemented a remote backup system using BorgBackup.
+
+Our backup architecture consists of three copies:
+
+1. **Original data:** `~/project/data/` on the Team 3 VM.
+2. **Local backup:** `~/jellyfin-backup/` on the Team 3 VM.
+3. **Remote backup:** Encrypted Borg repository on the Team 4 VM (`192.168.100.8`).
+
+This approach follows the principles of the 3-2-1 backup strategy, although complete compliance depends on the physical independence of the storage infrastructure.
+
+### Backup Configuration
+
+We use three automated backup jobs:
+
+| Time | Operation | Destination |
+|---|---|---|
+| 03:00 | Jellyfin database and metadata backup | Team 3 VM |
+| 04:00 | Filesystem backup using rsync | Team 3 VM |
+| 05:00 | Encrypted Borg backup | Team 4 VM |
+
+Borg uses encryption, deduplication, and incremental snapshots to reduce storage usage and preserve previous backup versions.
+
+Snapshot retention:
+- 7 daily backups
+- 4 weekly backups
+- 3 monthly backups
+
+Remote repository:
+
+`ssh://borg@192.168.100.8/var/backups/borg/comsys-lab-group-3`
+
+The Borg backup service and timer are configured in:
+
+```text
+~/.config/systemd/user/borg-backup.service
+~/.config/systemd/user/borg-backup.timer
+```
+
+### Backup Verification
+
+The first manual Borg backup completed successfully.
+
+- Files: 287
+- Original size: 12.38 GB
+- Deduplicated size: 12.32 GB
+- Duration: approximately 4 minutes
+
+Check the backup service:
+
+```bash
+systemctl --user status borg-backup.service
+```
+
+Check the automatic timer:
+
+```bash
+systemctl --user list-timers borg-backup.timer
+```
+
+Check the logs:
+
+```bash
+journalctl --user -u borg-backup.service -n 50 --no-pager
+```
+
+---
+
+## Complete VM Recovery Procedure
+
+This procedure describes how to restore Jellyfin when the original Team 3 VM is completely lost.
+
+### Prerequisites
+
+Before starting, ensure that:
+
+- A replacement Ubuntu VM is available.
+- The Team 4 backup server is operational.
+- The Borg repository is accessible.
+- The Borg passphrase and exported encryption key are available from secure external storage.
+- SSH access to the Borg server has been configured.
+
+The recovery credentials were saved outside the original VM.
+
+### Step 1 — Prepare the new VM
+
+Install Docker, Docker Compose, BorgBackup, and rsync.
+
+For example, on a compatible Ubuntu system:
+
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-v2 borgbackup rsync
+```
+
+Ensure the `comsys` user can operate Docker without sudo.
+
+The replacement VM should have sufficient storage for the recovered media library and application data.
+
+### Step 2 — Restore the project from GitHub
+
+```bash
+cd ~
+git clone https://github.com/alexsalc03/comsys-project.git project
+```
+
+This restores the Docker Compose configuration, scripts, and documentation.
+
+### Step 3 — Configure Borg access
+
+Restore the Borg passphrase from the secure external copy:
+
+```bash
+mkdir -p ~/.config/borg
+chmod 700 ~/.config/borg
+```
+
+Place the saved passphrase at:
+
+```text
+~/.config/borg/passphrase
+```
+
+Protect it:
+
+```bash
+chmod 600 ~/.config/borg/passphrase
+```
+
+Configure the Borg environment:
+
+```bash
+export BORG_REPO="ssh://borg@192.168.100.8/var/backups/borg/comsys-lab-group-3"
+
+export BORG_PASSCOMMAND="cat $HOME/.config/borg/passphrase"
+
+export BORG_RSH="ssh -i $HOME/.ssh/comsys_deploy -o IdentitiesOnly=yes"
+```
+
+The SSH private key must be restored securely or replaced with a new key authorized by Team 4.
+
+Verify the SSH host fingerprint with Team 4 before trusting the connection.
+
+The exported Borg repository key should also remain available. With `repokey-blake2`, the repository normally stores its encrypted key, so manual key import is not usually necessary.
+
+**Do not run `borg init` again.** The repository already exists and contains our backups.
+
+### Step 4 — List available backups
+
+```bash
+borg list
+```
+
+This displays the available snapshots.
+
+Example:
+
+```text
+comsys-lab-group-3-2026-11-17T15:42:14
+```
+
+Select the latest valid backup.
+
+### Step 5 — Restore the backup
+
+Create a temporary recovery directory:
+
+```bash
+mkdir -p ~/borg-restore
+cd ~/borg-restore
+```
+
+Restore the selected archive:
+
+```bash
+borg extract ::comsys-lab-group-3-2026-11-17T15:42:14
+```
+
+Replace the archive name with the one selected from `borg list`.
+
+The recovered directory should contain:
+
+```text
+~/borg-restore/
+├── .env
+├── config/
+└── media/
+```
+
+Check the restored files:
+
+```bash
+ls -la ~/borg-restore/
+```
+
+### Step 6 — Restore Jellyfin data
+
+Create the required directories:
+
+```bash
+mkdir -p ~/project/data/{config,cache,media}
+```
+
+Restore the configuration and database:
+
+```bash
+rsync -a ~/borg-restore/config/ ~/project/data/config/
+```
+
+Restore media files:
+
+```bash
+rsync -a ~/borg-restore/media/ ~/project/data/media/
+```
+
+Restore the environment file:
+
+```bash
+install -m 600 ~/borg-restore/.env ~/project/.env
+```
+
+The cache does not need to be restored because Jellyfin can regenerate it.
+
+### Step 7 — Start Jellyfin
+
+```bash
+cd ~/project
+docker compose config --quiet
+docker compose up -d
+```
+
+Check the containers:
+
+```bash
+docker compose ps
+```
+
+Check Jellyfin logs if necessary:
+
+```bash
+docker compose logs --tail=100 jellyfin
+```
+
+### Step 8 — Restore networking
+
+The original Jellyfin VM used:
+
+```text
+192.168.100.7:8096
+```
+
+If the replacement VM has a different private IP address:
+
+1. Update the Docker Compose configuration or environment variables.
+2. Coordinate with Team 4 to update the reverse proxy destination.
+3. Reapply firewall rules to allow connections only from the middleware VM.
+4. Verify HTTPS connectivity.
+
+### Step 9 — Verify recovery
+
+Open:
+
+https://media.csg.uzh.ch
+
+Check that:
+
+- Jellyfin is accessible through HTTPS.
+- Existing users can log in.
+- Media libraries are available.
+- Movies and music can be played.
+- User preferences and watch history are restored.
+- Direct access to Jellyfin from unauthorized hosts is blocked.
+
+### Step 10 — Restore backup automation
+
+Ensure the backup scripts are available in their expected locations:
+
+```text
+~/backup.sh
+~/bin/jellyfin-backup.sh
+```
+
+Restore their execution permissions and the existing cron schedule.
+
+Recreate or restore the Borg systemd service and timer:
+
+```text
+~/.config/systemd/user/borg-backup.service
+~/.config/systemd/user/borg-backup.timer
+```
+
+Enable user lingering if needed:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+Reload systemd and enable the timer:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now borg-backup.timer
+```
+
+Verify that automatic backups are scheduled correctly:
+
+```bash
+crontab -l
+systemctl --user list-timers borg-backup.timer
+```
+
+---
+
+## Limitations
+
+- Remote backups depend on the availability of the Team 4 VM.
+- Both VMs may share underlying physical infrastructure.
+- The remote backup contains the latest successfully synchronized local data, which may not include the most recent application changes.
+- The backup schedule does not currently enforce dependencies between jobs.
+- The Borg credentials must remain available outside the original VM.
+- The backup does not contain the entire operating system or its firewall configuration.
+- Dozzle's persistent data is not included in the current backup.
+- A complete recovery on a replacement VM has not yet been tested.
+
+## Recovery Objectives
+
+| Metric | Target |
+|---|---|
+| Backup frequency | Daily |
+| Recovery Point Objective (RPO) | 24 hours |
+| Recovery Time Objective (RTO) | 2 hours |
+| Recovery source | Team 4 Borg repository |
+| Recovery method | Git + Borg + Docker Compose |
+
+RPO and RTO are targets and have not yet been validated through a complete recovery test.
+
+**Status:** Remote backup implemented, automated, and manually verified. Complete VM disaster recovery procedure documented but not yet tested.
