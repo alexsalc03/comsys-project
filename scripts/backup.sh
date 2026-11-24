@@ -26,4 +26,11 @@ if [ -f "$PROJECT/.env" ]; then
     install -m 600 "$PROJECT/.env" "$BACKUP/.env"
 fi
 
+# Backup monitoring configuration
+mkdir -p "$BACKUP/monitoring"
+rsync -a "$PROJECT/monitoring/docker-compose.yaml" "$BACKUP/monitoring/docker-compose.yaml"
+if [ -f "$PROJECT/monitoring/.env" ]; then 
+	install -m 600 "$PROJECT/monitoring/.env" "$BACKUP/monitoring/.env"
+fi
+
 echo "Backup completed successfully!"
