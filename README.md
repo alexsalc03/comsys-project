@@ -147,7 +147,17 @@ Check the schedule:
 crontab -l
 ```
 
-## 6. Disaster Recovery — Project Folder Failure
+## 6. Secret Management
+
+All secrets are stored in a KeePassXC database (`comsys-group-3.kdbx`) in the Group 1's Nextcloud in folder  `group-3`. Additionally Nextcloud desktop client keeps a synced local copy on each team member's laptop, so the secrets remain available if the lab infrastructure is down.
+
+The database contains the Borg passphrase, the exported Borg key, the Borg SSH key (`comsys_deploy`), the VM user password, admin credentials for Jellyfin, Arcane, Uptime Kuma, and Beszel, the Jellyfin API key, Arcane's `ENCRYPTION_KEY`, and the ntfy topic. Each entry notes where the secret is used on the VM.
+
+The master password is shared in person only and is never stored digitally. Personal SSH keys are not stored in the database; each team member keeps their own.
+
+When a secret changes, the database must be updated as well.
+
+## 7. Disaster Recovery — Project Folder Failure
 
 This procedure explains how to restore Jellyfin if the `~/project` directory is accidentally deleted or corrupted.
 
