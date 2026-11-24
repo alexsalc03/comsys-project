@@ -15,8 +15,8 @@ Our deployment focuses on security, data persistence, backup, and disaster recov
 The system consists of:
 
 - **Jellyfin:** Media server running in a Docker container.
-- **Monitoring stack:** Arcane (container management and logs), Uptime Kuma internal service checks), and Beszel (server and container metrics), with alerts sent to our phones via ntfy.
-- **Middleware (Team 4):** Provides DNS, HTTPS, and reverse proxy functionality, the remote Borg backup repository, and external availability checks with Uptime Kuma
+- **Monitoring stack:** Arcane (container management and logs), Uptime Kuma (internal service checks), and Beszel (server and container metrics), with alerts sent to our phones via ntfy.
+- **Middleware (Team 4):** Provides DNS, HTTPS, and reverse proxy functionality, the remote Borg backup repository, and external availability checks with Uptime Kuma.
 - **Docker Compose:** Manages container deployment and configuration.
 
 Jellyfin listens on `192.168.100.7:8096` and is accessible through the middleware reverse proxy.
@@ -25,24 +25,26 @@ Direct access to Jellyfin is restricted to the middleware VM.
 
 ## 3. Project Structure
 
+```text
 ~/project/
-├── docker-compose.yml          
-├── .env                        
+├── docker-compose.yml          # Jellyfin
+├── .env
 ├── .gitignore
 ├── README.md
 ├── monitoring/
-│   ├── docker-compose.yaml     
-│   └── .env                     
-└── data/                       
-    ├── config/                 
-    ├── cache/                  
-    ├── media/                  
-    ├── arcane/                 
-    ├── uptime-kuma/            
-    ├── beszel/                 
-    └── beszel-socket/          
+│   ├── docker-compose.yaml     # Arcane, Uptime Kuma, Beszel hub + agent
+│   └── .env                    # Arcane ENCRYPTION_KEY, Beszel agent key
+└── data/                       # persistent data, excluded from Git
+    ├── config/
+    ├── cache/
+    ├── media/
+    ├── arcane/
+    ├── uptime-kuma/
+    ├── beszel/
+    └── beszel-socket/
+```
 
-Secrets are stored in `.env`, which is excluded from Git.
+Secrets are stored in the `.env` files (`~/project/.env` and `~/project/monitoring/.env`), which are excluded from Git.
 
 ## 4. Docker Management
 
@@ -70,6 +72,33 @@ View Jellyfin logs:
 ```bash
 docker compose logs jellyfin
 ```
+
+### Monitoring stack
+
+The monitoring stack has its own Compose file and is managed from its folder:
+
+```bash
+cd ~/project/monitoring
+docker compose up -d      # start
+docker compose down       # stop
+docker compose ps         # status
+```
+
+| Container | Image | Purpose | Listens on |
+|---|---|---|---|
+| `jellyfin` | `jellyfin/jellyfin` | Media server | `192.168.100.7:8096` |
+| `arcane` | `ghcr.io/getarcaneapp/manager:v2` | Container management and logs | `127.0.0.1:3552` |
+| `uptime-kuma` | `louislam/uptime-kuma:2-slim` | Internal service checks, ntfy alerts | `127.0.0.1:3001` |
+| `beszel` | `henrygd/beszel:latest` | Metrics dashboard and resource alerts | `127.0.0.1:8090` |
+| `beszel-agent` | `henrygd/beszel-agent:latest` | Collects VM and container metrics | Unix socket in `data/beszel-socket/` |
+
+The monitoring tools only listen on `127.0.0.1` and are reached through an SSH tunnel from a laptop:
+
+```bash
+ssh -N -L 8096:192.168.100.7:8096 -L 3552:localhost:3552 -L 3001:localhost:3001 -L 8090:localhost:8090 comsys-grp-3
+```
+
+Then open `http://localhost:8096` (Jellyfin), `http://localhost:3552` (Arcane), `http://localhost:3001` (Uptime Kuma), or `http://localhost:8090` (Beszel).
 
 ## 5. Backup System
 
@@ -127,7 +156,7 @@ It assumes the VM is operational and the backup directory is intact.
 ### Step 1 — Stop existing containers
 
 ```bash
-docker stop jellyfin dozzle
+docker stop jellyfin arcane uptime-kuma beszel beszel-agent
 ```
 
 Skip this step if the containers no longer exist.
@@ -179,17 +208,20 @@ install -m 600 ~/jellyfin-backup/.env ~/project/.env
 cd ~/project
 docker compose config --quiet
 docker compose up -d
+
+cd ~/project/monitoring
+docker compose up -d
 ```
 
 Verify the containers:
 
 ```bash
-docker compose ps
+docker ps
 ```
 
 ### Step 5 — Verify recovery
 
-Open https://media.csg.uzh.ch and verify that:
+Open https://media.comsyslab.csg.uzh.ch and verify that:
 
 - Jellyfin is accessible.
 - Existing users can log in.
@@ -483,6 +515,13 @@ Check Jellyfin logs if necessary:
 docker compose logs --tail=100 jellyfin
 ```
 
+Start the monitoring stack (recreate `~/project/monitoring/.env` first, with the Arcane `ENCRYPTION_KEY` from secure external storage):
+
+```bash
+cd ~/project/monitoring
+docker compose up -d
+```
+
 ### Step 8 — Restore networking
 
 The original Jellyfin VM used:
@@ -502,7 +541,7 @@ If the replacement VM has a different private IP address:
 
 Open:
 
-https://media.csg.uzh.ch
+https://media.comsyslab.csg.uzh.ch
 
 Check that:
 
@@ -561,7 +600,8 @@ systemctl --user list-timers borg-backup.timer
 - The backup schedule does not currently enforce dependencies between jobs.
 - The Borg credentials must remain available outside the original VM.
 - The backup does not contain the entire operating system or its firewall configuration.
-- Dozzle's persistent data is not included in the current backup.
+- The monitoring data (`data/arcane`, `data/uptime-kuma`, `data/beszel`) and `monitoring/.env` are not included in the current backup.
+- Our own Uptime Kuma and Beszel run on the monitored VM and cannot report its complete outage; this is covered by Team 4's external Uptime Kuma check.
 - A complete recovery on a replacement VM has not yet been tested.
 
 ## Recovery Objectives
